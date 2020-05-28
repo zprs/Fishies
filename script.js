@@ -45,12 +45,16 @@ function Fish(x, y)
     this.tailLength = 25;
 
     this.tailRotation = 0;
-    this.lastTailRotation = 0;
     this.tailAngularVelocity = 0;
+    this.tailAngularAcceleration = 2;
 
-    this.minTurnForce = 1;
+    this.movementSpeed = 2;
+
+    this.minFlapStrength = 0.2;
+    this.maxFlapStrength = 1;
+    this.flapCurveMultiplier = 3;
+
     this.maxTurnAngle = Math.PI / 2;
-    this.turningSpeed = 2;
 
     this.tailIntegral = 0;
 
@@ -71,7 +75,7 @@ function Fish(x, y)
         
         //Draw -----
         ctx.beginPath();  
-        ctx.moveTo(0, 0);
+        ctx.moveTo(-this.length / 2, 0);
         ctx.lineTo(this.length, 0);
         ctx.lineTo(Math.cos(this.tailRotation) * this.tailLength + this.length, Math.sin(this.tailRotation) * this.tailLength);
         ctx.stroke();
@@ -81,11 +85,8 @@ function Fish(x, y)
 
     this.makeDecision = function(lastDecision){
 
-        //console.log("new decision");
-
         //Is the optimal path to go towards the target achieved by a left or right turn ?
         // -> (based on the shortest angle distance between target and fish while keeping the current rotation into account)
-
         var targetDeltaRad = (Math.atan2((this.targetY - this.y), (this.targetX - this.x)) + Math.PI);
         var angleDifference = shortAngleDist(this.rotation, targetDeltaRad);
         var turnDirection = -Math.sign(angleDifference);
@@ -93,23 +94,23 @@ function Fish(x, y)
         console.log(targetDeltaRad, turnDirection);
 
         //How much this stroke is going to cause the fish to move (rotate and translate)
-        var flapStrength = this.minTurnForce + Math.abs(angleDifference);
-
-        //flap distance based on the powed that is going to be put into the stroke
-        var flapDistance = 1;
+        var strengthRange = this.maxFlapStrength - this.minFlapStrength;
+        var b = this.minFlapStrength - strengthRange;
+        var numerator = this.maxFlapStrength - b;
+        var flapStrength = numerator / (1 + Math.pow(2, -this.flapCurveMultiplier * Math.abs(angleDifference))) + b;
 
         //Fish wants to turn in the same direction still
         if(lastDecision == turnDirection && turnDirection != 0)
         {
             //Make a small flap in the opposite direction
             turnDirection = turnDirection == 1 ? -1 : 1;
-            flapStrength = .25;
+            flapStrength = .1;
         }
         
-        // if(turnDirection == 0) //Fish is already pointing directly at the target  ¯\_(ツ)_/¯
-        //     console.log("Ummmmmmmm. I will find a solution later. Probably just going to be the opposite of the stroke that the fish just made");
+        if(turnDirection == 0) //Fish is already pointing directly at the target  ¯\_(ツ)_/¯
+            console.log("Ummmmmmmm. I will find a solution later. Probably just going to be the opposite of the stroke that the fish just made");
 
-        this.actionQueue.push({turnDirection: turnDirection, flapStrength: flapStrength, flapDistance: flapDistance});
+        this.actionQueue.push({turnDirection: turnDirection, flapStrength: flapStrength, forwardStrength: .5});
     }
 
     this.update = function() {
@@ -117,20 +118,21 @@ function Fish(x, y)
         this.targetX = mouse.x;
         this.targetY = mouse.y;
 
-        var targetRotation = Math.PI / 2 * this.actionQueue[0].flapDistance * this.actionQueue[0].turnDirection; // flap strength of 1 = 90 degrees
+        var targetRotation = this.maxTurnAngle * this.actionQueue[0].flapStrength * this.actionQueue[0].turnDirection; // flap strength of 1 = 90 degrees
 
-        if(Math.abs(this.tailRotation - targetRotation) > .1)
+        if(Math.abs(this.tailRotation - targetRotation) > .05)
         {
             //continue with this action
-            //PID Controller for tail movement (Will need to be changed, just thrown in temporarily)
-            var deltaTime = 1;
-            var tailGains = {P: 1, I: 1, D: 1};
+            //P Controller for tail movement (Will need to be changed, just thrown in temporarily)
 
             var error = targetRotation - this.tailRotation;
 
-            var acceleration = .05;
-            this.tailRotation += error * acceleration;
-            this.rotation -= error * acceleration * .1 * this.actionQueue[0].flapStrength;
+            this.tailAngularVelocity += this.tailAngularAcceleration * error;
+            this.tailRotation += this.tailAngularVelocity
+            //this.rotation -= error * .2 * this.actionQueue[0].flapStrength;
+
+            //this.x -= Math.cos(this.rotation) * this.actionQueue[0].forwardStrength * this.movementSpeed;
+            //this.y -= Math.sin(this.rotation) * this.actionQueue[0].forwardStrength * this.movementSpeed;
             
             //PID(targetRotation, this.tailRotation, this.lastTailRotation, this.tailIntegral, deltaTime, tailGains.I, tailGains.D, tailGains.P);
         }
@@ -185,3 +187,10 @@ function shortAngleDist(a0,a1) {
 Number.prototype.Clamp = function(min, max) {
   return Math.min(Math.max(this, min), max);
 };
+
+
+
+
+//A shifts the top -> set to max stroke value
+//B shifts the bottom -> set to 1/2
+//C  -> min stroke value
